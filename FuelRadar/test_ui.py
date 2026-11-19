@@ -54,6 +54,7 @@ class DesktopTests(unittest.TestCase):
              patch.object(main, "fetch_places") as geocoder, \
              patch.object(main, "fetch_price_dataset", return_value=data), \
              patch.object(main, "detect_location", return_value=position) as detector, \
+             patch.object(main.webbrowser, "open", return_value=True) as browser, \
              patch.object(main.messagebox, "showwarning") as warning:
             store = STORE_TYPE(Path(folder) / "test.db")
             app = main.FuelRadarApp()
@@ -67,6 +68,24 @@ class DesktopTests(unittest.TestCase):
                 self.assertEqual(app.city_var.get(), position["label"])
                 self.assertIn("±75 m", app.status_var.get())
                 geocoder.assert_not_called()
+                app.tree.selection_set("near")
+                app._select_station()
+                self.assertEqual(app.navigate_button.cget("state"), "normal")
+                app.navigate_button.invoke()
+                from urllib.parse import urlparse, parse_qs
+                params = parse_qs(urlparse(browser.call_args.args[0]).query)
+                self.assertEqual(params["origin"], ["50.56,15.91"])
+                self.assertEqual(params["destination"], ["50.56,15.91"])
+                self.assertEqual(params["travelmode"], ["driving"])
+                app.city_var.set("Praha, Václavské náměstí 1")
+                app.navigate_button.invoke()
+                params = parse_qs(urlparse(browser.call_args.args[0]).query)
+                self.assertEqual(params["origin"], ["Praha, Václavské náměstí 1"])
+                app.city_var.set("")
+                self.assertEqual(app.navigate_button.cget("state"), "disabled")
+                browser.reset_mock()
+                app.navigate()
+                browser.assert_not_called()
                 detector.side_effect = RuntimeError("Přístup k poloze je zakázaný.")
                 app.location_button.invoke()
                 self.pump_until(app, lambda: warning.called)
@@ -146,6 +165,7 @@ class DesktopTests(unittest.TestCase):
                 app.geometry("1120x780")
                 app.update()
                 self.assertTrue(app.map_button.winfo_ismapped())
+                self.assertTrue(app.navigate_button.winfo_ismapped())
                 self.assertTrue(app.detail_label.winfo_ismapped())
                 self.assertGreater(app.tree.winfo_height(), 100)
                 self.assertLessEqual(app.map_button.winfo_rooty() + app.map_button.winfo_height(),

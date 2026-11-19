@@ -15,7 +15,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
 from services import (fetch_places, fetch_price_dataset, nearby_stations, sort_stations,
-                      prepare_station_address, fetch_station_place)
+                      prepare_station_address, fetch_station_place, directions_url)
 from ui import FuelRadarUI, BG, SORT_LABELS, HEADINGS
 from location_windows import detect_location
 
@@ -228,6 +228,7 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         self._cancel_locating()
         self._address_cancel.set()
         self.location = None
+        self._update_navigation_state()
         self._search_id += 1
         self.search_button.configure(text="Hledat stanice")
         self._suggest_id += 1
@@ -291,6 +292,7 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         if self._locating:
             return
         self._locating = True
+        self._update_navigation_state()
         self._address_cancel.set()
         self._location_request += 1
         request_id = self._location_request
@@ -440,6 +442,7 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
                     if request_id != self._location_request or not self._locating:
                         continue
                     self._locating = False
+                    self._update_navigation_state()
                     self.location_button.configure(state="normal", text="◎ Použít moji polohu")
                     if error:
                         self.status_var.set("Polohu se nepodařilo zjistit · zkontroluj Nastavení polohy")
@@ -540,7 +543,8 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
 
     def _table_double_click(self, event):
         if self.tree.identify_region(event.x, event.y) in ("cell", "tree"):
-            self.open_map()
+            self._select_station()
+            self.navigate()
 
     def _render(self):
         selection = self.tree.selection()
@@ -576,6 +580,7 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
     def _select_station(self, _event=None):
         selected = self.tree.selection()
         self.selected = next((s for s in self.stations if selected and s["id"] == selected[0]), None)
+        self._update_navigation_state()
         if not self.selected:
             self.map_button.configure(state="disabled")
             self.detail_var.set("Vyber stanici pro detail ceny.  ≈ odhad   ·   — cena není uvedena")
@@ -589,6 +594,34 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         self.detail_var.set(f"{self.selected['name']} · {self.selected['address']} · {self.selected['price_kind']} · "
                             f"{self.selected.get('source') or 'zdroj neuveden'}\n"
                             f"BenzinMapa.cz · záznam {stamp} · cenu ověř před tankováním")
+
+    def _update_navigation_state(self):
+        # During construction the input and buttons have not yet been created.
+        if "navigate_button" not in self.__dict__:
+            return
+        enabled = self.selected is not None and bool(self.city_var.get().strip()) and not self._locating
+        self.navigate_button.configure(state="normal" if enabled else "disabled")
+
+    def navigate(self):
+        if not self.selected:
+            self.status_var.set("Nejdřív vyber stanici, ke které chceš jet.")
+            return
+        if self._locating:
+            self.status_var.set("Počkej na zjištění výchozí polohy.")
+            return
+        origin = self.location or self.city_var.get().strip()
+        if not origin:
+            self.status_var.set("Zadej nahoře, odkud vyrážíš, nebo klikni na Použít moji polohu.")
+            self.city_entry.focus_set()
+            return
+        try:
+            opened = webbrowser.open(directions_url(origin, self.selected))
+        except (OSError, webbrowser.Error):
+            opened = False
+        if opened:
+            self.status_var.set(f"Trasa autem k {self.selected['name']} otevřena v Google Mapách.")
+        else:
+            messagebox.showwarning("Trasu nelze otevřít", "Nepodařilo se otevřít prohlížeč s trasou. Zkontroluj výchozí prohlížeč Windows.")
 
     def open_map(self):
         if self.selected:

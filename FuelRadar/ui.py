@@ -125,7 +125,7 @@ class FuelRadarUI:
         self.search_panel = RoundedPanel(content, padding=16)
         self.search_panel.pack(fill="x", pady=(0, 14))
         search = self.search_panel.body
-        tk.Label(search, text="KDE CHCEŠ TANKOVAT?", bg=PANEL, fg=MUTED, font=("Segoe UI", 8, "bold")).pack(anchor="w", pady=(0, 8))
+        tk.Label(search, text="ODKUD VYRÁŽÍŠ?  ·  POLOHA PRO HLEDÁNÍ A TRASU", bg=PANEL, fg=MUTED, font=("Segoe UI", 8, "bold")).pack(anchor="w", pady=(0, 8))
         row = tk.Frame(search, bg=PANEL)
         row.pack(fill="x")
         entry_border = tk.Frame(row, bg="#f5f8f9", highlightbackground=LINE, highlightthickness=1)
@@ -227,6 +227,7 @@ class FuelRadarUI:
         horizontal.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<<TreeviewSelect>>", self._select_station)
         self.tree.bind("<Double-1>", self._table_double_click)
+        self.tree.bind("<Return>", lambda _e: self.navigate())
         self.empty = tk.Label(table_frame, text="Tvoje další zastávka začíná tady.\n\nZadej město nebo adresu do vyhledávání.",
                               bg=PANEL, fg=MUTED, font=("Segoe UI", 12), justify="center")
         self.empty.place(relx=.5, rely=.5, anchor="center")
@@ -238,7 +239,10 @@ class FuelRadarUI:
                                      font=("Segoe UI", 9), anchor="w")
         self.detail_label.pack(side="left", fill="x", expand=True)
         self.detail_label.bind("<Configure>", lambda e: self.detail_label.configure(wraplength=max(1, e.width)))
-        self.map_button = self._button(bottom, "Otevřít mapu ↗", self.open_map)
+        self.navigate_button = self._button(bottom, "Navigovat ↗", self.navigate, primary=True)
+        self.navigate_button.configure(state="disabled")
+        self.navigate_button.pack(side="right", padx=(10, 0))
+        self.map_button = self._button(bottom, "Jen poloha ↗", self.open_map)
         self.map_button.configure(state="disabled")
         self.map_button.pack(side="right", padx=(16, 0))
         self.status_var = tk.StringVar(value="Připraveno na cestu")

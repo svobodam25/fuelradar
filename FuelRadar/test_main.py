@@ -41,6 +41,20 @@ class SortingTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def test_directions_contain_start_destination_and_driving_mode(self):
+        from urllib.parse import urlparse, parse_qs
+        station = {"lat": 50.55, "lon": 15.90}
+        for origin, expected in (({"lat": 50.56, "lon": 15.91}, "50.56,15.91"),
+                                 ("Trutnov, Polská 12", "Trutnov, Polská 12")):
+            with self.subTest(origin=origin):
+                url = services.directions_url(origin, station)
+                self.assertEqual(urlparse(url).netloc, "www.google.com")
+                params = parse_qs(urlparse(url).query)
+                self.assertEqual(params, {"api": ["1"], "origin": [expected],
+                                         "destination": ["50.55,15.9"], "travelmode": ["driving"]})
+        with self.assertRaises(ValueError):
+            services.directions_url("", station)
+
     def test_gps_address_is_not_replaced_by_wrong_provider_city(self):
         station = services.prepare_station_address({"address": "GPS 50.5648,15.9230", "city": "Červený Kostelec"})
         self.assertTrue(station["address_pending"])

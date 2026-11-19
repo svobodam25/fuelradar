@@ -111,6 +111,17 @@ def price_kind(source):
     return "Odhad"
 
 
+def directions_url(origin, station):
+    """Google Maps accepts coordinates or a typed address as the starting point."""
+    if isinstance(origin, dict):
+        origin = f"{origin['lat']},{origin['lon']}"
+    if not str(origin or "").strip():
+        raise ValueError("Zadej výchozí polohu pro trasu.")
+    params = {"api": 1, "origin": origin,
+              "destination": f"{station['lat']},{station['lon']}", "travelmode": "driving"}
+    return "https://www.google.com/maps/dir/?" + urllib.parse.urlencode(params)
+
+
 def sort_stations(stations, column="distance", descending=False):
     """Sort raw values, with missing values last in either direction."""
     def text_key(value):
