@@ -41,6 +41,38 @@ class SortingTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def test_gps_address_is_not_replaced_by_wrong_provider_city(self):
+        station = services.prepare_station_address({"address": "GPS 50.5648,15.9230", "city": "Červený Kostelec"})
+        self.assertTrue(station["address_pending"])
+        self.assertEqual(station["address"], "Upřesňuji obec…")
+        self.assertEqual(station["source_address"], "GPS 50.5648,15.9230")
+        self.assertFalse(services.prepare_station_address({"address": "Trutnov, Polská 12"})["address_pending"])
+
+    def test_reverse_location_uses_town_and_marks_nearby_street(self):
+        data = {"features": [{"properties": {"countrycode": "CZ", "city": "Trutnov",
+                             "street": "Polská", "housenumber": "99", "district": "Horní Předměstí"}}]}
+        with patch.object(services, "get_json", return_value=data):
+            place = services.fetch_station_place(50.56, 15.91)
+        self.assertEqual(place["city"], "Trutnov")
+        self.assertEqual(place["address"], "Trutnov · Horní Předměstí · poblíž Polská")
+        self.assertNotIn("99", place["address"])
+
+    def test_address_lookup_uses_persistent_cache(self):
+        import queue
+        import threading
+        with tempfile.TemporaryDirectory() as folder:
+            app = main.FuelRadarApp.__new__(main.FuelRadarApp)
+            app.store = main.FuelStore(Path(folder) / "test.db")
+            app.events = queue.Queue()
+            stations = [{"id": "pump", "lat": 50.56, "lon": 15.91}]
+            place = {"city": "Trutnov", "address": "Trutnov · poblíž Polská"}
+            with patch.object(main, "fetch_station_place", return_value=place) as reverse:
+                app._address_worker(1, stations, threading.Event())
+                app._address_worker(2, stations, threading.Event())
+            reverse.assert_called_once()
+            self.assertEqual(app.events.get_nowait(), ("address", 1, "pump", place))
+            self.assertEqual(app.events.get_nowait(), ("address", 2, "pump", place))
+
     def test_autocomplete_keeps_distinct_places_and_exact_coordinates(self):
         def feature(country, lon, lat):
             return {"properties": {"countrycode": country, "name": "Nová Ves", "city": "Praha"},

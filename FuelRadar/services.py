@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import threading
 import time
 import urllib.parse
@@ -16,6 +17,52 @@ HEADERS = {"User-Agent": "FuelRadar/1.1 (desktop fuel station finder)",
 _price_lock = threading.Lock()
 _price_cache = None
 _price_time = 0.0
+_reverse_lock = threading.Lock()
+_reverse_time = 0.0
+
+
+def prepare_station_address(station):
+    """Migrate old cached GPS strings as well as newly downloaded records."""
+    station = dict(station)
+    raw = station.get("source_address", station.get("address", "")) or ""
+    station["source_address"] = raw
+    if "address_pending" not in station:
+        coordinates_only = bool(re.match(r"^\s*(?:GPS\s*)?[+-]?\d+[.,]\d+\s*[,; ]\s*[+-]?\d+[.,]\d+\s*$", raw, re.I))
+        station["address_pending"] = not raw.strip() or coordinates_only
+    if station["address_pending"]:
+        # The provider's 'city' can be a wrong town or a region; don't guess.
+        station["address"] = "Upřesňuji obec…"
+    return station
+
+
+def fetch_station_place(lat, lon):
+    """Describe a station's surroundings, without claiming a nearby house is its address."""
+    global _reverse_time
+    params = urllib.parse.urlencode({"lat": lat, "lon": lon, "limit": 3, "radius": 1, "lang": "default"})
+    with _reverse_lock:
+        delay = 1 - (time.monotonic() - _reverse_time)
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            data = get_json("https://photon.komoot.io/reverse?" + params, timeout=8)
+        finally:
+            _reverse_time = time.monotonic()
+    for feature in data.get("features", []):
+        props = feature.get("properties", {})
+        if props.get("countrycode", "").upper() != "CZ":
+            continue
+        city = props.get("city") or (props.get("name") if props.get("type") in ("city", "locality") else None)
+        if not city:
+            continue
+        district = props.get("district")
+        parts = [city]
+        if district and district != city:
+            parts.append(district)
+        street = props.get("street") or (props.get("name") if props.get("type") == "street" else None)
+        if street:
+            parts.append("poblíž " + street)
+        return {"city": city, "address": " · ".join(parts)}
+    raise ValueError("Obec se nepodařilo dohledat.")
 
 
 def get_json(url, timeout=15):
@@ -108,12 +155,12 @@ def nearby_stations(dataset, lat, lon, radius=15):
             value = price.get(field)
             if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0:
                 prices[fuel] = float(value)
-        result.append({"id": identity, "name": record.get("name") or record.get("brand") or "Čerpací stanice",
-                       "address": record.get("address") or record.get("city") or f"GPS {slat:.5f}, {slon:.5f}",
+        result.append(prepare_station_address({"id": identity, "name": record.get("name") or record.get("brand") or "Čerpací stanice",
+                       "address": record.get("address") or "",
                        "city": record.get("city", ""), "lat": slat, "lon": slon,
                        "distance": distance, "prices": prices,
                        "source": price.get("src", ""), "price_kind": price_kind(price.get("src")),
-                       "updated_at": price.get("at") or dataset.get("last_updated", "")})
+                       "updated_at": price.get("at") or dataset.get("last_updated", "")}))
     return sorted(result, key=lambda s: s["distance"])
 
 

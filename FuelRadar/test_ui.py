@@ -9,12 +9,87 @@ import main
 
 
 class DesktopTests(unittest.TestCase):
+    def test_city_is_resolved_in_background_and_old_gps_cache_is_upgraded(self):
+        import threading
+        release = threading.Event()
+        place = {"city": "Trutnov", "address": "Trutnov · poblíž Polská"}
+        def reverse(*_args):
+            release.wait(3)
+            return place
+        data = {"stations": [{"id": "pump", "name": "ORLEN", "lat": 50.56, "lng": 15.91,
+                              "address": "GPS 50.5600,15.9100", "city": "Červený Kostelec", "p": {"n95": 38}}]}
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(main, "FuelStore", side_effect=lambda: store), \
+             patch.object(main.FuelRadarApp, "_refresh_national"), \
+             patch.object(main, "fetch_places", return_value=[{"label": "Trutnov", "lat": 50.56, "lon": 15.91}]), \
+             patch.object(main, "fetch_price_dataset", return_value=data), \
+             patch.object(main, "fetch_station_place", side_effect=reverse) as lookup:
+            store = STORE_TYPE(Path(folder) / "test.db")
+            app = main.FuelRadarApp()
+            try:
+                app.city_var.set("Trutnov")
+                app.search()
+                self.pump_until(app, lambda: bool(app.tree.get_children()))
+                self.assertNotIn("GPS", app.tree.set("pump", "address"))
+                self.assertNotIn("Červený Kostelec", app.tree.set("pump", "address"))
+                app.tree.selection_set("pump")
+                release.set()
+                self.pump_until(app, lambda: app.tree.set("pump", "address") == place["address"])
+                self.assertEqual(app.tree.selection(), ("pump",))
+                self.assertIn(place["address"], app.detail_var.get())
+                app.search()
+                self.pump_until(app, lambda: bool(app.tree.get_children()) and app.tree.set("pump", "address") == place["address"])
+                lookup.assert_called_once()
+            finally:
+                release.set()
+                app.destroy()
+
+    def test_device_location_search_failure_and_stale_position(self):
+        position = {"label": "Moje poloha · 50.56000, 15.91000", "lat": 50.56, "lon": 15.91, "accuracy": 75}
+        data = {"stations": [{"id": "near", "name": "Stanice", "address": "Trutnov", "lat": 50.56, "lng": 15.91,
+                              "p": {"n95": 38, "src": "tank-ono.cz"}}]}
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(main, "FuelStore", side_effect=lambda: store), \
+             patch.object(main.FuelRadarApp, "_refresh_national"), \
+             patch.object(main, "fetch_places") as geocoder, \
+             patch.object(main, "fetch_price_dataset", return_value=data), \
+             patch.object(main, "detect_location", return_value=position) as detector, \
+             patch.object(main.messagebox, "showwarning") as warning:
+            store = STORE_TYPE(Path(folder) / "test.db")
+            app = main.FuelRadarApp()
+            errors = []
+            app.report_callback_exception = lambda *args: errors.append(args)
+            try:
+                app.update()
+                app.location_button.invoke()
+                self.pump_until(app, lambda: len(app.tree.get_children()) == 1)
+                self.assertEqual(app.location, position)
+                self.assertEqual(app.city_var.get(), position["label"])
+                self.assertIn("±75 m", app.status_var.get())
+                geocoder.assert_not_called()
+                detector.side_effect = RuntimeError("Přístup k poloze je zakázaný.")
+                app.location_button.invoke()
+                self.pump_until(app, lambda: warning.called)
+                self.assertEqual(app.location_button.cget("state"), "normal")
+                self.assertEqual(len(app.tree.get_children()), 1)
+                app._locating = True
+                app._location_request += 1
+                obsolete = app._location_request
+                app.city_var.set("Brno")
+                app.events.put(("position", obsolete, position, None))
+                self.pump_until(app, lambda: app.events.empty())
+                self.assertEqual(app.city_var.get(), "Brno")
+                self.assertIsNone(app.location)
+                self.assertFalse(errors, errors)
+            finally:
+                app.destroy()
+
     def test_typing_selection_prices_sort_and_stale_results(self):
         place = {"label": "Trutnov, okres Trutnov", "lat": 50.56, "lon": 15.91}
         data = {"last_updated": "2026-11-19T05:00:00Z", "stations": [
-            {"id": "one", "name": "První", "lat": 50.56, "lng": 15.91,
+            {"id": "one", "name": "První", "address": "Trutnov", "lat": 50.56, "lng": 15.91,
              "p": {"n95": 38.2, "src": "tank-ono.cz"}},
-            {"id": "two", "name": "Druhá", "lat": 50.57, "lng": 15.91,
+            {"id": "two", "name": "Druhá", "address": "Trutnov", "lat": 50.57, "lng": 15.91,
              "p": {"n95": 37.1, "src": "mbenzin-avg-offset"}},
         ]}
         with tempfile.TemporaryDirectory() as folder, \

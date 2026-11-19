@@ -11,7 +11,7 @@ LINE = "#e3e9ed"
 NAV = "#112b32"
 SORT_LABELS = {"Vzdálenost": "distance", "Benzín": "benzín", "Nafta": "nafta",
                "LPG": "lpg", "Stanice": "name", "Adresa": "address", "Typ ceny": "kind"}
-HEADINGS = {"name": "Stanice", "address": "Adresa", "distance": "Vzdálenost",
+HEADINGS = {"name": "Stanice", "address": "Město / místo", "distance": "Vzdálenost",
             "benzín": "Natural 95", "nafta": "Nafta", "lpg": "LPG", "kind": "Typ ceny"}
 
 
@@ -150,8 +150,18 @@ class FuelRadarUI:
         self.search_button = self._button(row, "Hledat stanice", self.search, primary=True)
         self.search_button.pack(side="right")
         self.city_var.trace_add("write", self._location_changed)
-        tk.Label(search, text="Město nebo adresa · začni psát a vyber si z návrhů", bg=PANEL,
-                 fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", pady=(7, 0))
+        location_row = tk.Frame(search, bg=PANEL)
+        location_row.pack(fill="x", pady=(7, 0))
+        self.location_button = tk.Button(location_row, text="◎ Použít moji polohu", command=self.use_my_location,
+                                         bg=PANEL, fg=GREEN, activebackground="#edf4f1", activeforeground=GREEN,
+                                         disabledforeground=MUTED, relief="flat", cursor="hand2", borderwidth=0,
+                                         font=("Segoe UI", 9, "bold"), padx=0, pady=0)
+        self.location_button.pack(side="left")
+        tk.Label(location_row, text="nebo zadej město či adresu", bg=PANEL,
+                 fg=MUTED, font=("Segoe UI", 9)).pack(side="left", padx=12)
+        tk.Button(location_row, text="Nastavení polohy", command=self.open_location_settings, bg=PANEL, fg=MUTED,
+                  activebackground=PANEL, activeforeground=GREEN, relief="flat", borderwidth=0, cursor="hand2",
+                  font=("Segoe UI", 9), padx=0, pady=0).pack(side="right")
         self.suggestion_box = tk.Listbox(content, bg=PANEL, fg=TEXT, height=5, selectbackground="#dcefe8",
                                          selectforeground=GREEN, relief="flat", exportselection=False,
                                          highlightthickness=1, highlightbackground=LINE,

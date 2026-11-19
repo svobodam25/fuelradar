@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import sqlite3
 import threading
@@ -13,8 +14,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
-from services import fetch_places, fetch_price_dataset, nearby_stations, sort_stations
+from services import (fetch_places, fetch_price_dataset, nearby_stations, sort_stations,
+                      prepare_station_address, fetch_station_place)
 from ui import FuelRadarUI, BG, SORT_LABELS, HEADINGS
+from location_windows import detect_location
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -56,6 +59,9 @@ class FuelStore:
                 CREATE TABLE IF NOT EXISTS search_results (
                     search_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS station_addresses (
+                    coordinate_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL
+                );
             """)
 
     def connect(self):
@@ -85,6 +91,24 @@ class FuelStore:
         with self.connect() as db:
             row = db.execute("SELECT value FROM settings WHERE key='last_city'").fetchone()
             return row["value"] if row else ""
+
+    def cached_address(self, key):
+        with self.connect() as db:
+            row = db.execute("SELECT payload,fetched_at FROM station_addresses WHERE coordinate_key=?", (key,)).fetchone()
+        if row:
+            try:
+                age = datetime.now().astimezone() - datetime.fromisoformat(row["fetched_at"])
+                if timedelta(0) <= age < timedelta(days=30):
+                    return json.loads(row["payload"])
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    def save_address(self, key, place):
+        with self.connect() as db:
+            db.execute("INSERT INTO station_addresses VALUES(?,?,?) ON CONFLICT(coordinate_key) "
+                       "DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
+                       (key, json.dumps(place, ensure_ascii=False), now_iso()))
 
     def remember_city(self, city: str) -> None:
         with self.connect() as db:
@@ -170,8 +194,11 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         self._suggest_busy = False
         self._suggest_pending = None
         self._setting_location = False
+        self._location_request = 0
+        self._locating = False
         self.location = None
         self.suggestions = []
+        self._address_cancel = threading.Event()
         self._configure_styles()
         self._build_ui()
         self.national = self.store.national_prices()
@@ -179,8 +206,16 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         self._refresh_national()
         if self.city:
             self.city_var.set(self.city)
-            self.after(350, self.search)
+            startup_request = self._search_id
+            self.after(350, lambda: self.search() if self._search_id == startup_request and not self._locating else None)
         self.after(100, self._poll_events)
+
+    def destroy(self):
+        self._address_cancel.set()
+        # Cancel callbacks before their Tcl commands disappear on window close.
+        for callback in self.tk.call("after", "info"):
+            self.after_cancel(callback)
+        super().destroy()
 
     def _hide_suggestions(self):
         self.suggestion_box.pack_forget()
@@ -190,6 +225,8 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
     def _location_changed(self, *_args):
         if self._setting_location:
             return
+        self._cancel_locating()
+        self._address_cancel.set()
         self.location = None
         self._search_id += 1
         self.search_button.configure(text="Hledat stanice")
@@ -244,12 +281,51 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         self.search()
         return "break"
 
+    def _cancel_locating(self):
+        if self._locating:
+            self._location_request += 1
+            self._locating = False
+            self.location_button.configure(state="normal", text="◎ Použít moji polohu")
+
+    def use_my_location(self):
+        if self._locating:
+            return
+        self._locating = True
+        self._address_cancel.set()
+        self._location_request += 1
+        request_id = self._location_request
+        self._search_id += 1
+        self._suggest_id += 1
+        self._suggest_pending = None
+        if self._suggest_after:
+            self.after_cancel(self._suggest_after)
+            self._suggest_after = None
+        self._hide_suggestions()
+        self.search_button.configure(text="Hledat stanice")
+        self.location_button.configure(state="disabled", text="Zjišťuji polohu…")
+        self.status_var.set("Zjišťuji polohu zařízení přes Windows…")
+        threading.Thread(target=self._location_worker, args=(request_id,), daemon=True).start()
+
+    def _location_worker(self, request_id):
+        try:
+            self.events.put(("position", request_id, detect_location(), None))
+        except Exception as exc:
+            self.events.put(("position", request_id, None, str(exc)))
+
+    def open_location_settings(self):
+        try:
+            os.startfile("ms-settings:privacy-location")
+        except (OSError, AttributeError):
+            messagebox.showinfo("Nastavení polohy", "Otevři Nastavení Windows → Soukromí a zabezpečení → Poloha.")
+
     def search(self):
         city = self.city_var.get().strip()
         if not city:
             self.status_var.set("Zadej město nebo adresu.")
             self.city_entry.focus_set()
             return
+        self._cancel_locating()
+        self._address_cancel.set()
         self._suggest_id += 1
         self._suggest_pending = None
         if self._suggest_after:
@@ -301,6 +377,31 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         except Exception as exc:
             self.events.put(("national", None, None, str(exc)))
 
+    def _start_address_lookup(self, request_id):
+        self._address_cancel.set()
+        self._address_cancel = threading.Event()
+        pending = [dict(s) for s in self.stations if s.get("address_pending")]
+        if pending:
+            threading.Thread(target=self._address_worker,
+                             args=(request_id, pending, self._address_cancel), daemon=True).start()
+
+    def _address_worker(self, request_id, stations, cancelled):
+        failures = 0
+        for station in stations:
+            if cancelled.is_set():
+                return
+            key = f"{station['lat']:.7f},{station['lon']:.7f}"
+            place = None
+            try:
+                place = self.store.cached_address(key)
+                if place is None and failures < 3:
+                    place = fetch_station_place(station["lat"], station["lon"])
+                    self.store.save_address(key, place)
+                    failures = 0
+            except Exception:
+                failures += 1
+            self.events.put(("address", request_id, station["id"], place))
+
     def _refresh_national(self):
         threading.Thread(target=self._national_worker, daemon=True).start()
         self.after(NATIONAL_REFRESH_MS, self._refresh_national)
@@ -319,7 +420,37 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         try:
             while True:
                 event = self.events.get_nowait()
-                if event[0] == "suggestions":
+                if event[0] == "address":
+                    _, request_id, station_id, place = event
+                    if request_id != self._search_id:
+                        continue
+                    station = next((s for s in self.stations if s["id"] == station_id), None)
+                    if station is not None:
+                        if place:
+                            station.update(place)
+                        else:
+                            station["address"] = "Obec nezjištěna · otevři mapu"
+                        station["address_pending"] = False
+                        y, x = self.tree.yview()[0], self.tree.xview()[0]
+                        self._render()
+                        self.tree.yview_moveto(y)
+                        self.tree.xview_moveto(x)
+                elif event[0] == "position":
+                    _, request_id, location, error = event
+                    if request_id != self._location_request or not self._locating:
+                        continue
+                    self._locating = False
+                    self.location_button.configure(state="normal", text="◎ Použít moji polohu")
+                    if error:
+                        self.status_var.set("Polohu se nepodařilo zjistit · zkontroluj Nastavení polohy")
+                        messagebox.showwarning("Poloha není dostupná", error)
+                    else:
+                        self.location = location
+                        self._setting_location = True
+                        self.city_var.set(location["label"])
+                        self._setting_location = False
+                        self.search()
+                elif event[0] == "suggestions":
                     _, generation, query, places, error = event
                     self._suggest_busy = False
                     if generation == self._suggest_id and query == self.city_var.get().strip():
@@ -351,7 +482,7 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
                     _, request_id, location, stations, cached, error = event
                     if request_id != self._search_id:
                         continue
-                    self.stations = stations
+                    self.stations = [prepare_station_address(s) for s in stations]
                     if location:
                         self.location = location
                         self.city = location["label"]
@@ -360,6 +491,7 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
                         self._setting_location = False
                         self.store.remember_city(self.city)
                     self._render()
+                    self._start_address_lookup(request_id)
                     self.search_button.configure(text="Hledat stanice")
                     if error:
                         self.status_var.set("Online hledání selhalo · uložené výsledky" if cached else "Hledání se nezdařilo")
@@ -370,6 +502,8 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
                         estimated = sum(bool(s["prices"]) and s["price_kind"] == "Odhad" for s in stations)
                         prefix = "Uložené výsledky" if cached else "Načteno"
                         self.status_var.set(f"{prefix}: {len(stations)} stanic · {estimated} s odhadem ceny")
+                        if location and location.get("accuracy") is not None:
+                            self.status_var.set(self.status_var.get() + f" · přesnost polohy ±{location['accuracy']:.0f} m")
         except queue.Empty:
             pass
         finally:
@@ -452,7 +586,7 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
             stamp = datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone().strftime("%d. %m. %Y %H:%M")
         except ValueError:
             stamp = "datum neuvedeno"
-        self.detail_var.set(f"{self.selected['name']} · {self.selected['price_kind']} · "
+        self.detail_var.set(f"{self.selected['name']} · {self.selected['address']} · {self.selected['price_kind']} · "
                             f"{self.selected.get('source') or 'zdroj neuveden'}\n"
                             f"BenzinMapa.cz · záznam {stamp} · cenu ověř před tankováním")
 
