@@ -1,6 +1,6 @@
 # Fuel Radar
 
-Tmavá desktopová aplikace pro Windows napsaná v Pythonu. Vyhledá čerpací stanice v zadaném českém městě, zobrazí jejich adresy, týdenní celostátní průměry cen benzínu, nafty a LPG, uloží data do místní SQLite databáze a otevře vybranou stanici v OpenStreetMap.
+Desktopová aplikace pro hledání polohy s našeptáváním a porovnání cen okolních čerpacích stanic v Česku. Používá Python 3.10+ s Tkinterem a pouze standardní knihovnu.
 
 ## Spuštění
 
@@ -9,17 +9,35 @@ Je potřeba Python 3.10 nebo novější. Aplikace používá pouze standardní k
 V PowerShellu otevři tuto složku a spusť:
 
 ```powershell
-py main.py
+py -3.10 main.py
 ```
 
-Při hledání stanic a aktualizaci cen aplikace potřebuje internetové připojení. Seznam zahrnuje všechny nalezené stanice; pokud v mapě chybí název nebo adresa, zobrazí se obecný název či město. Souřadnice měst se ukládají lokálně a výsledky hledání se používají z cache po dobu 15 minut. Cenové karty automaticky načítají při spuštění a pak jednou denně týdenní průměry za celé Česko z otevřených dat ČSÚ [CENPHMT](https://data.gov.cz/dataset?iri=https%3A%2F%2Fdata.gov.cz%2Fzdroj%2Fdatov%C3%A9-sady%2F00025593%2F1c335381defc8e7bcf3fb638a2e6e01e). ČSÚ nezveřejňuje ceny jednotlivých čerpacích stanic, proto jsou průměry zobrazené odděleně a nejsou vydávané za cenu konkrétní pumpy. Data i poslední hledané město se ukládají do souboru `fuel_radar.db` v této složce.
+Z kořene repozitáře použij `py -3.10 FuelRadar/main.py`. Lze použít i jinou nainstalovanou verzi Pythonu 3.10+ s Tkinterem. Žádné balíčky přes pip nejsou potřeba.
 
-## Funkce
+## Použití
 
-- vyhledání čerpacích stanic v okruhu 15 km od města,
-- zobrazení čerpacích stanic v okolí včetně stanic s neúplnými mapovými údaji,
-- týdenní průměry benzínu, nafty a LPG za celé Česko z ČSÚ,
-- otevření polohy vybrané stanice v OpenStreetMap,
-- místní cache seznamu stanic a posledních cenových průměrů.
+1. Začni psát město nebo adresu (alespoň dva znaky). Návrhy se zobrazí po krátké pauze v psaní.
+2. Klikni na návrh nebo jej vyber šipkou dolů a Enterem. Stanice a ceny se načtou automaticky. Enter přímo v textovém poli nebo tlačítko Hledat stanice použije první nalezenou polohu.
+3. Zvol okruh 5–50 km. Tabulku můžeš řadit podle stanice, adresy, vzdálenosti, ceny každého paliva i typu ceny. Klikni na záhlaví sloupce; dalším kliknutím obrátíš směr. Stejné řazení lze zvolit v nabídce Seřadit podle a tlačítkem Vzestupně/Sestupně. Šipka v záhlaví ukazuje aktivní směr. Čísla se řadí podle hodnoty a chybějící ceny zůstávají vždy na konci. Vzdálenost se měří vzdušnou čarou.
+4. Vyber stanici pro zobrazení zdroje a data záznamu. Dvojklik nebo tlačítko otevře její polohu v mapě.
+5. Nabídkou Všechny typy cen nad tabulkou můžeš ponechat jen ceník, hlášení, odhady nebo stanice bez ceny. Počet vedle nadpisu ukazuje počet zobrazených stanic. Tlačítko Stanice v okolí v postranním panelu obnoví výchozí filtr a řazení.
 
-V ČR není v této aplikaci použit otevřený zdroj s aktuální cenou pro každou jednotlivou pumpu. Ceny konkrétních stanic se proto nezobrazují. Celostátní průměr není vydáván za cenu konkrétní pumpy. Seznam stanic je z OpenStreetMap; při jeho dalším použití je potřeba uvést [atribuci OSM](https://www.openstreetmap.org/copyright).
+Rozhraní má světlou pracovní plochu, tmavý postranní panel, zaoblené karty a střídající se pozadí řádků. Při menším okně jsou další sloupce dostupné vodorovným posuvníkem. Výběr stanice se při změně řazení zachovává.
+
+## Zdroje a přesnost cen
+
+Našeptávání poskytuje [Photon](https://github.com/komoot/photon), který podporuje průběžné hledání. Požadavky běží na pozadí, s prodlevou a nejvýše jedním požadavkem našeptávače současně. Starší odpovědi nepřepíšou novější zadání.
+
+Stanice a ceny se načítají z veřejného datového souboru [BenzinMapa.cz](https://www.benzinmapa.cz/). Zdroj nyní obsahuje převážně **odhady**, ne hlášené ceny jednotlivých stanic. V aplikaci jsou označené **≈** a typem **Odhad**, včetně neznámých typů zdroje. Záznamy označené poskytovatelem `tank-ono.cz` se zobrazují jako Ceník Tank ONO a `uzivatel` jako Hlášení uživatele. Jde o převzaté údaje, nikoli nezávislé ověření aplikací. Chybějící ceny jsou **—**, nikdy nula nebo celostátní průměr. Datum v detailu je datum záznamu poskytovatele, nemusí být datem poslední kontroly ceny na pumpě. Cenu před tankováním ověř na stanici.
+
+Pokrytí odpovídá seznamu poskytovatele; nemusí zahrnovat všechny stanice. Mapové údaje pocházejí od [© přispěvatelů OpenStreetMap](https://www.openstreetmap.org/copyright). Oddělené horní karty zůstávají týdenními celostátními průměry z [ČSÚ](https://data.csu.gov.cz/opendata/sady/CENPHMT/distribuce/json), nejsou průměrem cen v okolí.
+
+Poslední poloha, výsledky a ceny se ukládají do `fuel_radar.db`. Cache platí 15 minut, odděleně podle souřadnic a okruhu. Při výpadku internetu aplikace ukáže uložené výsledky daného hledání s upozorněním. První hledání vyžaduje internet. Veřejné služby mohou být dočasně nedostupné.
+
+## Ověření
+
+```powershell
+py -3.10 -m unittest -v
+```
+
+Testy zahrnují našeptávání, přesné souřadnice výběru, okruh, původ cen, oddělenou cache, formát týdne, všechny sloupce v obou směrech, chybějící ceny a ovládání skutečného okna Tkinteru včetně kliknutí na záhlaví, filtru a menší velikosti okna. Test okna vyžaduje desktopovou relaci; síťové odpovědi v testech jsou nahrazené pevnými daty.
