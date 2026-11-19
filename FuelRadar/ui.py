@@ -11,6 +11,7 @@ LINE = "#e3e9ed"
 NAV = "#112b32"
 SORT_LABELS = {"Vzdálenost": "distance", "Benzín": "benzín", "Nafta": "nafta",
                "LPG": "lpg", "Stanice": "name", "Adresa": "address", "Typ ceny": "kind"}
+FUEL_LABELS = {"Benzín (Natural 95)": "benzín", "Nafta (Diesel)": "nafta", "LPG": "lpg"}
 HEADINGS = {"name": "Stanice", "address": "Město / místo", "distance": "Vzdálenost",
             "benzín": "Natural 95", "nafta": "Nafta", "lpg": "LPG", "kind": "Typ ceny"}
 
@@ -79,8 +80,11 @@ class FuelRadarUI:
         return button
 
     def _build_ui(self):
-        self.sort_column = "distance"
+        fuel = self.store.preferred_fuel()
+        self.sort_column = fuel
         self.sort_descending = False
+        self.show_other_fuels = False
+        self.fuel_var = tk.StringVar(value=next(label for label, key in FUEL_LABELS.items() if key == fuel))
         sidebar = tk.Frame(self, bg=NAV, width=196)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
@@ -194,10 +198,23 @@ class FuelRadarUI:
         self.type_filter.pack(side="right")
         self.type_var.trace_add("write", lambda *_: self._render())
 
+        fuel_controls = tk.Frame(content, bg=BG)
+        self.fuel_controls = fuel_controls
+        fuel_controls.pack(fill="x", pady=(0, 8))
+        tk.Label(fuel_controls, text="Moje palivo", bg=BG, fg=TEXT, font=("Segoe UI", 10, "bold")).pack(side="left", padx=(0, 12))
+        self.fuel_combo = ttk.Combobox(fuel_controls, textvariable=self.fuel_var, values=tuple(FUEL_LABELS),
+                                      state="readonly", width=21, style="Fuel.TCombobox")
+        self.fuel_combo.pack(side="left")
+        tk.Label(fuel_controls, text="Od nejlevnějšího · neznámé ceny na konci", bg=BG, fg=MUTED,
+                 font=("Segoe UI", 9)).pack(side="left", padx=12)
+        self.other_fuels_button = self._button(fuel_controls, "Zobrazit ostatní paliva", self._toggle_other_fuels)
+        self.other_fuels_button.pack(side="right")
+        self.fuel_var.trace_add("write", self._fuel_changed)
+
         controls = tk.Frame(content, bg=BG)
-        controls.pack(fill="x", pady=(0, 8))
+        self.sort_controls = controls
         tk.Label(controls, text="Seřadit podle", bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(side="left", padx=(0, 10))
-        self.sort_var = tk.StringVar(value="Vzdálenost")
+        self.sort_var = tk.StringVar(value=next(label for label, key in SORT_LABELS.items() if key == fuel))
         self.sort_combo = ttk.Combobox(controls, textvariable=self.sort_var, values=tuple(SORT_LABELS),
                                       state="readonly", width=15, style="Fuel.TCombobox")
         self.sort_combo.pack(side="left")
@@ -249,6 +266,7 @@ class FuelRadarUI:
         tk.Label(content, textvariable=self.status_var, bg=BG, fg=MUTED, anchor="w", font=("Segoe UI", 8)).pack(
             before=bottom, side="bottom", fill="x", pady=(10, 0))
         self._update_sort_headers()
+        self._update_fuel_view()
 
     def _stat_card(self, parent, title, value, hint, column, accent=False):
         color = GREEN if accent else PANEL
@@ -261,4 +279,5 @@ class FuelRadarUI:
         label.pack(anchor="w", pady=(7, 3))
         label.hint_label = tk.Label(body, text=hint, bg=color, fg="#bce1d6" if accent else MUTED, font=("Segoe UI", 8))
         label.hint_label.pack(anchor="w")
+        label.panel = panel
         return label

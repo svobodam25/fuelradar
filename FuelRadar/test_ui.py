@@ -9,6 +9,50 @@ import main
 
 
 class DesktopTests(unittest.TestCase):
+    def test_fuel_selection_price_order_visibility_and_saved_preference(self):
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(main, "FuelStore", side_effect=lambda: store), \
+             patch.object(main.FuelRadarApp, "_refresh_national"):
+            store = STORE_TYPE(Path(folder) / "test.db")
+            app = main.FuelRadarApp()
+            try:
+                app.stations = [
+                    {"id": "near", "name": "Blízká", "address": "Trutnov", "distance": 1,
+                     "prices": {"benzín": 40, "nafta": 35, "lpg": 27}, "price_kind": "Odhad"},
+                    {"id": "cheap", "name": "Levnější", "address": "Trutnov", "distance": 10,
+                     "prices": {"benzín": 38, "nafta": 45, "lpg": 25}, "price_kind": "Odhad"},
+                    {"id": "unknown", "name": "Neznámá", "address": "Trutnov", "distance": .1,
+                     "prices": {}, "price_kind": "Odhad"}]
+                app._render()
+                app.update()
+                self.assertEqual(app.tree.get_children(), ("cheap", "near", "unknown"))
+                self.assertIn("benzín", app.tree["displaycolumns"])
+                self.assertNotIn("nafta", app.tree["displaycolumns"])
+                self.assertNotIn("lpg", app.tree["displaycolumns"])
+                self.assertFalse(app.average_cards["nafta"].panel.winfo_ismapped())
+                app.fuel_var.set("Nafta (Diesel)")
+                self.assertEqual(store.preferred_fuel(), "nafta")
+                self.assertEqual(app.tree.get_children(), ("near", "cheap", "unknown"))
+                self.assertIn("nafta", app.tree["displaycolumns"])
+                self.assertNotIn("benzín", app.tree["displaycolumns"])
+                app.other_fuels_button.invoke()
+                app.update()
+                self.assertTrue(app.average_cards["benzín"].panel.winfo_ismapped())
+                self.assertIn("lpg", app.tree["displaycolumns"])
+                app.sort_var.set("LPG")
+                self.assertEqual(app.tree.get_children()[0], "cheap")
+                app.other_fuels_button.invoke()
+                self.assertEqual(app.sort_column, "nafta")
+                self.assertEqual(app.tree.get_children()[0], "near")
+                app.fuel_var.set("LPG")
+                self.assertEqual(app.tree.get_children(), ("cheap", "near", "unknown"))
+                app._toggle_sort_direction()
+                app._reset_filters()
+                self.assertFalse(app.sort_descending)
+                self.assertEqual(app.sort_column, "lpg")
+            finally:
+                app.destroy()
+
     def test_city_is_resolved_in_background_and_old_gps_cache_is_upgraded(self):
         import threading
         release = threading.Event()
@@ -177,7 +221,7 @@ class DesktopTests(unittest.TestCase):
     def click_heading(app, column):
         app.update()
         # Scroll the target heading into view even at the smallest window size.
-        columns = app.tree["columns"]
+        columns = app.tree["displaycolumns"]
         offset = sum(app.tree.column(c, "width") for c in columns[:columns.index(column)])
         total = sum(app.tree.column(c, "width") for c in columns)
         app.tree.xview_moveto(offset / total)

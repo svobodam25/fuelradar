@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox
 from services import (fetch_places, fetch_price_dataset, nearby_stations, sort_stations,
                       prepare_station_address, fetch_station_place, directions_url)
-from ui import FuelRadarUI, BG, SORT_LABELS, HEADINGS
+from ui import FuelRadarUI, BG, SORT_LABELS, HEADINGS, FUEL_LABELS
 from location_windows import detect_location
 
 
@@ -117,6 +117,15 @@ class FuelStore:
     def remember_city(self, city: str) -> None:
         with self.connect() as db:
             db.execute("INSERT INTO settings VALUES('last_city', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (city,))
+
+    def preferred_fuel(self):
+        with self.connect() as db:
+            row = db.execute("SELECT value FROM settings WHERE key='fuel'").fetchone()
+        return row["value"] if row and row["value"] in FUEL_LABELS.values() else "benzín"
+
+    def remember_fuel(self, fuel):
+        with self.connect() as db:
+            db.execute("INSERT INTO settings VALUES('fuel',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (fuel,))
 
     def geocode(self, city: str) -> tuple[float, float] | None:
         with self.connect() as db:
@@ -345,7 +354,8 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         radius = int(self.radius_var.get())
         location = dict(self.location) if self.location else None
         self.stations = []
-        self._render()
+        fuel = FUEL_LABELS[self.fuel_var.get()]
+        self.sort_var.set(next(label for label, key in SORT_LABELS.items() if key == fuel))
         self.empty.configure(text="Načítám stanice a ceny v okolí…")
         self.status_var.set("Vyhledávám stanice a ceny…")
         self.search_button.configure(text="Vyhledávám…")
@@ -516,6 +526,41 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
         finally:
             self.after(100, self._poll_events)
 
+    def _fuel_changed(self, *_args):
+        fuel = FUEL_LABELS[self.fuel_var.get()]
+        self.store.remember_fuel(fuel)
+        self._update_fuel_view()
+        self.sort_var.set(next(label for label, key in SORT_LABELS.items() if key == fuel))
+
+    def _toggle_other_fuels(self):
+        self.show_other_fuels = not self.show_other_fuels
+        self._update_fuel_view()
+        fuel = FUEL_LABELS[self.fuel_var.get()]
+        if not self.show_other_fuels and self.sort_column in FUEL_LABELS.values() and self.sort_column != fuel:
+            self.sort_var.set(next(label for label, key in SORT_LABELS.items() if key == fuel))
+
+    def _update_fuel_view(self):
+        fuel = FUEL_LABELS[self.fuel_var.get()]
+        extra = [key for key in FUEL_LABELS.values() if key != fuel] if self.show_other_fuels else []
+        self.tree.configure(displaycolumns=("name", "address", "distance", fuel, *extra, "kind"))
+        self.other_fuels_button.configure(text="Skrýt ostatní paliva" if self.show_other_fuels else "Zobrazit ostatní paliva")
+        if self.show_other_fuels:
+            self.sort_controls.pack(after=self.fuel_controls, fill="x", pady=(0, 8))
+        else:
+            self.sort_controls.pack_forget()
+        self.sort_combo.configure(values=tuple(label for label, key in SORT_LABELS.items()
+                                               if key not in FUEL_LABELS.values() or key == fuel or self.show_other_fuels))
+        all_cards = [self.station_count, *self.average_cards.values()]
+        cards = [self.station_count, self.average_cards[fuel], *(self.average_cards[key] for key in extra)]
+        parent = self.station_count.panel.master
+        for card in all_cards:
+            card.panel.grid_remove()
+        for index in range(4):
+            parent.columnconfigure(index, weight=1 if index < len(cards) else 0,
+                                   uniform="card" if index < len(cards) else "", minsize=0)
+        for index, card in enumerate(cards):
+            card.panel.grid(row=0, column=index, sticky="nsew", padx=(0, 12 if index < len(cards) - 1 else 0))
+
     def _sort_selected(self, *_args):
         self.sort_column = SORT_LABELS.get(self.sort_var.get(), "distance")
         self.sort_descending = False
@@ -542,7 +587,8 @@ class FuelRadarApp(FuelRadarUI, tk.Tk):
 
     def _reset_filters(self):
         self.type_var.set("Všechny typy cen")
-        self.sort_var.set("Vzdálenost")
+        fuel = FUEL_LABELS[self.fuel_var.get()]
+        self.sort_var.set(next(label for label, key in SORT_LABELS.items() if key == fuel))
         self.city_entry.focus_set()
 
     def _table_double_click(self, event):

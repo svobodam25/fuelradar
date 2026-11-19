@@ -4,7 +4,7 @@ Desktopová aplikace pro hledání polohy s našeptáváním a porovnání cen o
 
 ## Spuštění
 
-Hotový Windows x64 release je ve složce `release/FuelRadar-1.0.0-windows-x64/` v kořeni projektu. Spusť `FuelRadar.exe`; Python ani instalace nejsou potřeba. Stejný balíček je dostupný jako ZIP. EXE ukládá databázi do `%LOCALAPPDATA%\FuelRadar\fuel_radar.db`, mimo dočasnou složku aplikace. Zdrojová verze používá původní databázi vedle `main.py`; osobní databáze se do release nepřibaluje.
+Hotový Windows x64 release je ve složce `release/FuelRadar-1.1.0-windows-x64/` v kořeni projektu. Spusť `FuelRadar.exe`; Python ani instalace nejsou potřeba. Stejný balíček je dostupný jako ZIP. EXE ukládá databázi do `%LOCALAPPDATA%\FuelRadar\fuel_radar.db`, mimo dočasnou složku aplikace. Zdrojová verze používá původní databázi vedle `main.py`; osobní databáze se do release nepřibaluje.
 
 Je potřeba Python 3.10 nebo novější. Aplikace používá pouze standardní knihovnu Pythonu; další balíčky není nutné instalovat.
 
@@ -21,9 +21,9 @@ Z kořene repozitáře použij `py -3.10 FuelRadar/main.py`. Lze použít i jino
 1. Začni psát město nebo adresu (alespoň dva znaky). Návrhy se zobrazí po krátké pauze v psaní.
    Místo psaní můžeš kliknout na **Použít moji polohu**. Aplikace jednorázově zjistí souřadnice zařízení přes službu polohy Windows a rovnou vyhledá stanice ve zvoleném okruhu. Pokud Windows poskytne údaj o přesnosti, zobrazí se dole ve stavovém řádku.
 2. Klikni na návrh nebo jej vyber šipkou dolů a Enterem. Stanice a ceny se načtou automaticky. Enter přímo v textovém poli nebo tlačítko Hledat stanice použije první nalezenou polohu.
-3. Zvol okruh 5–50 km. Tabulku můžeš řadit podle stanice, adresy, vzdálenosti, ceny každého paliva i typu ceny. Klikni na záhlaví sloupce; dalším kliknutím obrátíš směr. Stejné řazení lze zvolit v nabídce Seřadit podle a tlačítkem Vzestupně/Sestupně. Šipka v záhlaví ukazuje aktivní směr. Čísla se řadí podle hodnoty a chybějící ceny zůstávají vždy na konci. Vzdálenost se měří vzdušnou čarou.
+3. Zvol okruh 5–50 km a **Moje palivo**: Benzín (Natural 95), Nafta (Diesel) nebo LPG. Výsledky se automaticky řadí podle ceny zvoleného paliva **od nejlevnějšího po nejdražší**, nikoli podle vzdálenosti. Stanice bez známé ceny jsou na konci. Volba paliva se ukládá pro další spuštění. Výchozí řazení se obnoví při změně paliva a každém novém hledání. Viditelná je jen cena vybraného paliva a odpovídající celostátní průměr. Tlačítko **Zobrazit ostatní paliva** odkryje další ceny, průměry a pokročilé ovládání řazení; opětovným kliknutím je skryješ. Nadále lze výslovně změnit řazení kliknutím na viditelné záhlaví, šipka ukazuje aktivní směr. Vzdálenost se měří vzdušnou čarou.
 4. Vyber stanici a klikni na **Navigovat ↗**. V Google Mapách se otevře **trasa autem** z polohy zadané nahoře v poli **Odkud vyrážíš?** k přesným souřadnicím pumpy. Stejně funguje dvojklik na řádek nebo Enter při vybrané stanici. Pokud jsi použil tlačítko Použít moji polohu nebo vybral návrh adresy, předají se přesné souřadnice začátku. Nově napsanou adresu lze použít jako výchozí bod přímo, bez dalšího hledání stanic; Google Mapy ji převedou na polohu. Pro přesný začátek cesty zadej celou adresu, samotné město vede z jeho středu. Tlačítko **Jen poloha ↗** nadále otevře pouze bod stanice v OpenStreetMap.
-5. Nabídkou Všechny typy cen nad tabulkou můžeš ponechat jen ceník, hlášení, odhady nebo stanice bez ceny. Počet vedle nadpisu ukazuje počet zobrazených stanic. Tlačítko Stanice v okolí v postranním panelu obnoví výchozí filtr a řazení.
+5. Nabídkou Všechny typy cen nad tabulkou můžeš ponechat jen ceník, hlášení, odhady nebo stanice bez ceny. Počet vedle nadpisu ukazuje počet zobrazených stanic. Tlačítko Stanice v okolí v postranním panelu obnoví výchozí filtr a řazení podle ceny tvého paliva.
 
 Rozhraní má světlou pracovní plochu, tmavý postranní panel, zaoblené karty a střídající se pozadí řádků. Při menším okně jsou další sloupce dostupné vodorovným posuvníkem. Výběr stanice se při změně řazení zachovává.
 
