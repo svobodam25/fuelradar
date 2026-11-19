@@ -4,6 +4,8 @@ Desktopová aplikace pro hledání polohy s našeptáváním a porovnání cen o
 
 ## Spuštění
 
+Hotový Windows x64 release je ve složce `release/FuelRadar-1.0.0-windows-x64/` v kořeni projektu. Spusť `FuelRadar.exe`; Python ani instalace nejsou potřeba. Stejný balíček je dostupný jako ZIP. EXE ukládá databázi do `%LOCALAPPDATA%\FuelRadar\fuel_radar.db`, mimo dočasnou složku aplikace. Zdrojová verze používá původní databázi vedle `main.py`; osobní databáze se do release nepřibaluje.
+
 Je potřeba Python 3.10 nebo novější. Aplikace používá pouze standardní knihovnu Pythonu; další balíčky není nutné instalovat.
 
 V PowerShellu otevři tuto složku a spusť:
@@ -50,5 +52,15 @@ Poslední poloha, výsledky a ceny se ukládají do `fuel_radar.db`. Cache plat�
 ```powershell
 py -3.10 -m unittest -v
 ```
+
+Release lze znovu vytvořit z kořene projektu:
+
+```powershell
+py -3.10 -m venv .venv-build
+./.venv-build/Scripts/python.exe -m pip install -r requirements-build.txt
+./.venv-build/Scripts/python.exe build_release.py
+```
+
+Skript spustí testy a sestaví samostatné EXE, ikonu, ZIP a kontrolní součty SHA-256. Vyžaduje Windows, 64bitový Python a při instalaci sestavovacích balíčků internet.
 
 Testy zahrnují našeptávání, přesné souřadnice výběru, okruh, původ cen, oddělenou cache, formát týdne, všechny sloupce v obou směrech, chybějící ceny a ovládání skutečného okna Tkinteru včetně kliknutí na záhlaví, filtru a menší velikosti okna. Testy polohy pokrývají předání souřadnic do hledání, přesnost, zamítnutí přístupu, timeout, neplatné souřadnice a ignorování staré odpovědi. Test okna vyžaduje desktopovou relaci; odpovědi síťových služeb a služby polohy v testech jsou nahrazené pevnými daty.

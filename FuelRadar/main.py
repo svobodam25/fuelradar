@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import sqlite3
+import sys
 import threading
 import urllib.parse
 import urllib.request
@@ -21,7 +22,9 @@ from location_windows import detect_location
 
 
 APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "fuel_radar.db"
+DATA_DIR = (Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "FuelRadar"
+            if getattr(sys, "frozen", False) else APP_DIR)
+DB_PATH = DATA_DIR / "fuel_radar.db"
 CSU_DATASET_URL = "https://data.csu.gov.cz/opendata/sady/CENPHMT/distribuce/json"
 NATIONAL_REFRESH_MS = 24 * 60 * 60 * 1000
 STATION_CACHE_TTL = timedelta(minutes=15)
@@ -38,6 +41,7 @@ def fmt_price(value: float | None) -> str:
 class FuelStore:
     def __init__(self, path: Path = DB_PATH):
         self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS stations (

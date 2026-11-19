@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local build environment and packaged releases
+.venv-build/
+release/
